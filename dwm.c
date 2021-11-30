@@ -194,6 +194,7 @@ static void resizeclient(Client *c, int x, int y, int w, int h);
 static void resizemouse(const Arg *arg);
 static void restack(Monitor *m);
 static void run(void);
+static void runAutostart(void);
 static void scan(void);
 static int sendevent(Client *c, Atom proto);
 static void sendmon(Client *c, Monitor *m);
@@ -234,6 +235,8 @@ static int xerror(Display *dpy, XErrorEvent *ee);
 static int xerrordummy(Display *dpy, XErrorEvent *ee);
 static int xerrorstart(Display *dpy, XErrorEvent *ee);
 static void zoom(const Arg *arg);
+static void screenshot(const Arg *arg);
+static void nametag(const Arg *arg);
 
 /* variables */
 static const char broken[] = "broken";
@@ -1382,6 +1385,12 @@ run(void)
 }
 
 void
+runAutostart(void) {
+	system("cd ~/.dwm; ./autostart_blocking.sh");
+	system("cd ~/.dwm; ./autostart.sh &");
+}
+
+void
 scan(void)
 {
 	unsigned int i, num;
@@ -2127,6 +2136,80 @@ zoom(const Arg *arg)
 	pop(c);
 }
 
+void
+screenshot(const Arg *arg)
+{
+	switch(arg->ui) {
+	case 0:
+		system("maim \"/home/$USER/Pictures/$(date).png\"");
+		break;
+	case 1:
+		system("maim | xclip -selection clipboard -t image/png");
+		break;
+	case 10:
+		system("maim --select \"/home/$USER/Pictures/$(date).png\"");
+		break;
+	case 11:
+		system("maim --select \"/home/$USER/Pictures/$(date).png\" | xclip -selection clipboard -t image/png");
+		break;
+	}
+}
+
+static char *util_cat(char *dest, char *end, const char *str)
+{
+    while (dest < end && *str)
+        *dest++ = *str++;
+    return dest;
+}
+
+size_t join_str(char *out_string, size_t out_bufsz, const char *delim, const char **chararr)
+{
+    char *ptr = out_string;
+    char *strend = out_string + out_bufsz;
+    while (ptr < strend && *chararr)
+    {
+        ptr = util_cat(ptr, strend, *chararr);
+        chararr++;
+        if (*chararr)
+            ptr = util_cat(ptr, strend, delim);
+    }
+    return ptr - out_string;
+}
+
+static const char* dmenu_cmd_str = "dmenu -fn 'Source Code Pro:size=15' < /dev/null";
+
+void
+nametag(const Arg *arg) {
+	char *p, name[MAX_TAGNAME_LEN];
+//	char dmenu_cmd_str[4096];
+	FILE *f;
+	int i;
+
+	errno = 0; // popen(3p) says on failure it "may" set errno
+//	join_str(dmenu_cmd_str, 4096, " ", dmenucmd);
+//	sprintf(dmenu_cmd_str, "%s < /dev/null", dmenu_cmd_str);
+
+	if(!(f = popen(dmenu_cmd_str, "r"))) {
+		fprintf(stderr, "dwm: popen 'dmenu < /dev/null' failed%s%s\n", errno ? ": " : "", errno ? strerror(errno) : "");
+		return;
+	}
+	if (!(p = fgets(name, MAX_TAGNAME_LEN, f)) && (i = errno) && ferror(f))
+		fprintf(stderr, "dwm: fgets failed: %s\n", strerror(i));
+	if (pclose(f) < 0)
+		fprintf(stderr, "dwm: pclose failed: %s\n", strerror(errno));
+	if(!p)
+		return;
+	if((p = strchr(name, '\n')))
+		*p = '\0';
+
+	for(i = 0; i < LENGTH(tags); i++)
+		if(selmon->tagset[selmon->seltags] & (1 << i)) {
+			sprintf(tags[i], TAG_PREPEND, i+1);
+			strcat(tags[i], name);
+		}
+	drawbars();
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -2145,6 +2228,7 @@ main(int argc, char *argv[])
 		die("pledge");
 #endif /* __OpenBSD__ */
 	scan();
+	runAutostart();
 	run();
 	cleanup();
 	XCloseDisplay(dpy);
